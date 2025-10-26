@@ -1,0 +1,1 @@
+print ("Xin chào mấy con người tồi")
