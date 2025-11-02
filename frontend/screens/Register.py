@@ -1,7 +1,11 @@
 import tkinter as tk
 from tkinter import messagebox
 from PIL import Image, ImageTk
-import os, re
+import os
+
+# Import backend
+from backend.Core.Authentication import AuthenticationService
+
 
 class RegisterPage(tk.Frame):
     def __init__(self, parent, controller):
@@ -41,14 +45,6 @@ class RegisterPage(tk.Frame):
             img = Image.open(image_path).resize((500, 420), Image.LANCZOS)
             self.photo = ImageTk.PhotoImage(img)
             self.canvas.create_image(0, 0, anchor='nw', image=self.photo)
-        else:
-            tk.Label(
-                self.left_frame,
-                text="[Không tìm thấy hình ảnh]",
-                font=('Arial', 14),
-                fg='gray',
-                bg='#FFFFFF'
-            ).pack(pady=180)
 
         # Khung phải: Form đăng ký
         # ==== Container chính căn giữa ====
@@ -286,33 +282,64 @@ class RegisterPage(tk.Frame):
 
     # ============ Xử lý sự kiện đăng ký ============
     def on_register(self):
-        email = self.email_entry.get()
-        fullname = self.fullname_entry.get()
-        password = self.password_entry.get()
-        confirm_password = self.confirm_password_entry.get()
+        email = self.email_entry.get().strip()
+        fullname = self.fullname_entry.get().strip()
+        password = self.password_entry.get().strip()
+        confirm_password = self.confirm_password_entry.get().strip()
 
-        email_pattern = r'^[\w\.-]+@[\w\.-]+\.\w+$'
-        if email == '' or email == 'Email':
-            messagebox.showwarning("Cảnh báo", "Vui lòng nhập email!")
-            return
-        if not re.match(email_pattern, email):
-            messagebox.showerror("Lỗi", "Email không đúng định dạng!")
-            return
-        if fullname == '' or fullname == 'Tên đầy đủ':
-            messagebox.showwarning("Cảnh báo", "Vui lòng nhập tên đầy đủ!")
-            return
-        if password == '' or password == 'Mật khẩu':
-            messagebox.showwarning("Cảnh báo", "Vui lòng nhập mật khẩu!")
-            return
-        if len(password) < 6:
-            messagebox.showerror("Lỗi", "Mật khẩu phải có ít nhất 6 ký tự!")
-            return
-        if confirm_password == '' or confirm_password == 'Xác nhận mật khẩu':
-            messagebox.showwarning("Cảnh báo", "Vui lòng xác nhận mật khẩu!")
-            return
-        if password != confirm_password:
-            messagebox.showwarning("Cảnh báo", "Mật khẩu xác nhận không khớp!")
-            return
+        # Kiểm tra placeholder
+        if email == 'Email':
+            email = ''
+        if fullname == 'Tên đầy đủ':
+            fullname = ''
+        if password == 'Mật khẩu':
+            password = ''
+        if confirm_password == 'Xác nhận mật khẩu':
+            confirm_password = ''
 
-        messagebox.showinfo("Thành công", "Đăng ký thành công!")
-        self.controller.show_frame("LoginPage")
+        # ===== GỌI BACKEND REGISTER =====
+        success, message, user_id = AuthenticationService.register(
+            email=email,
+            full_name=fullname,
+            password=password,
+            confirm_password=confirm_password
+        )
+
+        if success:
+            messagebox.showinfo("Thành công", message)
+            # Chuyển về trang đăng nhập
+            self.controller.show_frame("LoginPage")
+        else:
+            messagebox.showerror("Lỗi", message)
+
+    # ========= Reset form khi chuyển trang ==========
+    def reset_form(self):
+        """Reset toàn bộ form về trạng thái ban đầu"""
+        # Reset email
+        self.email_entry.delete(0, tk.END)
+        self.email_entry.insert(0, 'Email')
+        self.email_entry.config(fg='gray')
+        
+        # Reset fullname
+        self.fullname_entry.delete(0, tk.END)
+        self.fullname_entry.insert(0, 'Tên đầy đủ')
+        self.fullname_entry.config(fg='gray')
+        
+        # Reset password
+        self.password_entry.delete(0, tk.END)
+        self.password_entry.insert(0, 'Mật khẩu')
+        self.password_entry.config(fg='gray', show='•')
+        
+        # Reset confirm password
+        self.confirm_password_entry.delete(0, tk.END)
+        self.confirm_password_entry.insert(0, 'Xác nhận mật khẩu')
+        self.confirm_password_entry.config(fg='gray', show='•')
+        
+        # Reset eye buttons
+        if hasattr(self, 'eye_btn_pass'):
+            self.password_visible = False
+            self.eye_btn_pass.config(image=self.eye_close_pass)
+        
+        if hasattr(self, 'eye_btn_confirm'):
+            self.confirm_password_visible = False
+            self.eye_btn_confirm.config(image=self.eye_close_confirm)

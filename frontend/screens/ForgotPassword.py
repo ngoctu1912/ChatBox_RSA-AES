@@ -1,7 +1,10 @@
 import tkinter as tk
 from tkinter import messagebox
-from PIL import Image, ImageTk
-import os, re
+import os
+
+# Import backend
+from backend.Core.Authentication import AuthenticationService
+
 
 class ForgotPasswordWindow(tk.Toplevel):
     def __init__(self, parent, load_icon_func):
@@ -126,25 +129,23 @@ class ForgotPasswordWindow(tk.Toplevel):
         new_pass = self.pass_entry.get().strip()
         confirm = self.confirm_entry.get().strip()
 
-        email_pattern = r'^[\w\.-]+@[\w\.-]+\.\w+$'
-        if email in ['', 'Email']:
-            messagebox.showwarning("Cảnh báo", "Vui lòng nhập email!")
-            return
-        if not re.match(email_pattern, email):
-            messagebox.showerror("Lỗi", "Email không đúng định dạng!")
-            return
-        if new_pass in ['', 'Mật khẩu mới']:
-            messagebox.showwarning("Cảnh báo", "Vui lòng nhập mật khẩu mới!")
-            return
-        if len(new_pass) < 6:
-            messagebox.showerror("Lỗi", "Mật khẩu phải có ít nhất 6 ký tự!")
-            return
-        if confirm in ['', 'Xác nhận mật khẩu']:
-            messagebox.showwarning("Cảnh báo", "Vui lòng xác nhận mật khẩu!")
-            return
-        if new_pass != confirm:
-            messagebox.showerror("Lỗi", "Mật khẩu xác nhận không khớp!")
-            return
+        # Kiểm tra placeholder
+        if email == 'Email':
+            email = ''
+        if new_pass == 'Mật khẩu mới':
+            new_pass = ''
+        if confirm == 'Xác nhận mật khẩu':
+            confirm = ''
 
-        messagebox.showinfo("Thành công", "Mật khẩu đã được đặt lại thành công!")
-        self.destroy()
+        # ===== GỌI BACKEND RESET PASSWORD =====
+        success, message = AuthenticationService.reset_password(
+            email=email,
+            new_password=new_pass,
+            confirm_password=confirm
+        )
+
+        if success:
+            messagebox.showinfo("Thành công", message)
+            self.destroy()
+        else:
+            messagebox.showerror("Lỗi", message)

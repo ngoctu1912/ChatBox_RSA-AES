@@ -3,7 +3,8 @@ from tkinter import messagebox
 from PIL import Image, ImageTk
 from screens.ForgotPassword import ForgotPasswordWindow
 import os
-import re
+
+from backend.Core.Authentication import AuthenticationService
 
 
 class LoginPage(tk.Frame):
@@ -44,14 +45,6 @@ class LoginPage(tk.Frame):
             img = Image.open(image_path).resize((500, 420), Image.LANCZOS)
             self.photo = ImageTk.PhotoImage(img)
             self.canvas.create_image(0, 0, anchor='nw', image=self.photo)
-        else:
-            tk.Label(
-                self.left_frame,
-                text="[Không tìm thấy hình ảnh]",
-                font=('Arial', 14),
-                fg='gray',
-                bg='#FFFFFF'
-            ).pack(pady=180)
 
         # --- Khung phải: Form đăng nhập ---
         # ==== Container chính ====
@@ -92,6 +85,9 @@ class LoginPage(tk.Frame):
             is_password=True
         )
         self.password_frame.grid_configure(pady=(0, 8))
+
+        # ==== BIND ENTER ====
+        self.password_entry.bind('<Return>', lambda e: self.on_login())
 
         # ==== Quên mật khẩu? ====
         self.forgot_password = tk.Label(
@@ -237,26 +233,38 @@ class LoginPage(tk.Frame):
         email = self.email_entry.get().strip()
         password = self.password_entry.get().strip()
 
-        # ===== Kiểm tra email =====
-        if email == '' or email == 'abc123@gmail.com':
-            messagebox.showwarning("Cảnh báo", "Vui lòng nhập email!")
-            return
+        # Kiểm tra placeholder
+        if email == 'abc123@gmail.com':
+            email = ''
+        if password == 'Mật khẩu':
+            password = ''
 
-        email_pattern = r'^[\w\.-]+@[\w\.-]+\.\w+$'
-        if not re.match(email_pattern, email):
-            messagebox.showerror("Lỗi", "Email không đúng định dạng!")
-            return
+        # ===== GỌI BACKEND LOGIN =====
+        success, message, user_data = AuthenticationService.login(email, password)
 
-        # ===== Kiểm tra mật khẩu =====
-        if password == '' or password == 'Mật khẩu':
-            messagebox.showwarning("Cảnh báo", "Vui lòng nhập mật khẩu!")
-            return
+        if success:
+            # Lưu thông tin user vào controller
+            self.controller.current_user = user_data
+            
+            # Chuyển sang màn hình Chat
+            self.controller.show_frame("ChatPage")
+        else:
+            messagebox.showerror("Lỗi", message)
 
-        if len(password) < 6:
-            messagebox.showerror("Lỗi", "Mật khẩu phải có ít nhất 6 ký tự!")
-            return
-
-        # ===== Thành công  =====
-        messagebox.showinfo("Thành công", "Đăng nhập thành công!")
-
-    
+    # ========= Reset form khi chuyển trang ==========
+    def reset_form(self):
+        """Reset toàn bộ form về trạng thái ban đầu"""
+        # Reset email
+        self.email_entry.delete(0, tk.END)
+        self.email_entry.insert(0, 'abc123@gmail.com')
+        self.email_entry.config(fg='gray')
+        
+        # Reset password
+        self.password_entry.delete(0, tk.END)
+        self.password_entry.insert(0, 'Mật khẩu')
+        self.password_entry.config(fg='gray', show='•')
+        
+        # Reset eye button
+        if hasattr(self, 'eye_btn'):
+            self.password_visible = False
+            self.eye_btn.config(image=self.eye_close)
