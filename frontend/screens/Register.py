@@ -284,8 +284,8 @@ class RegisterPage(tk.Frame):
     def on_register(self):
         email = self.email_entry.get().strip()
         fullname = self.fullname_entry.get().strip()
-        password = self.password_entry.get().strip()
-        confirm_password = self.confirm_password_entry.get().strip()
+        password = self.password_entry.get()  # KHÔNG STRIP PASSWORD
+        confirm_password = self.confirm_password_entry.get()  # KHÔNG STRIP PASSWORD
 
         # Kiểm tra placeholder
         if email == 'Email':

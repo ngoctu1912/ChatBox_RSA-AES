@@ -2,18 +2,23 @@ import tkinter as tk
 from tkinter import ttk
 from PIL import Image, ImageTk
 from components.ContactItem import ContactItem
+from datetime import datetime
 import os
 
 
 class Sidebar(tk.Frame):
-    def __init__(self, parent, controller=None, user_info=None, contacts=None, on_contact_click=None):
+    def __init__(self, parent, controller=None, user_info=None, contacts=None, on_contact_click=None, sio_client=None, user_id=None):
         super().__init__(parent, bg="#ffffff", width=280)
         self.pack_propagate(False)
 
         self.controller = controller              
-        self.on_contact_click = on_contact_click  # callback khi chọn 1 liên hệ
-        self.all_contacts = contacts or []        # danh sách tất cả liên hệ
-        self.contact_items = []                   # các widget ContactItem đang hiển thị
+        self.on_contact_click = on_contact_click
+        self.all_contacts = contacts or []        
+        self.contact_items = []
+        self.contact_widgets = {} # FIX MỚI: Dictionary lưu trữ widget theo tên để cập nhật nhanh
+        self.sio_client = sio_client  #  Lưu socket client
+        self.user_id = user_id  #  Lưu user_id
+        self.user_info = user_info  #  Lưu user_info để truyền cho SettingsDialog
 
         # ================== HEADER NGƯỜI DÙNG ==================
         header = tk.Frame(self, bg="#EEEEEE", height=60)
@@ -43,33 +48,59 @@ class Sidebar(tk.Frame):
 
         tk.Label(info_frame, text=status_text, font=("Inter", 9), fg="green", bg="#EEEEEE").pack(side="left")
 
-        # Icon cài đặt (trang trí)
+        # Icon cài đặt (có thể click)
         settings_icon = self._load_image("assets/icons/settings.png", (18, 18))
         if settings_icon:
             self.settings_icon = settings_icon
-            tk.Label(header, image=self.settings_icon, bg="#EEEEEE", cursor="hand2").pack(side="right", padx=10)
+            settings_label = tk.Label(header, image=self.settings_icon, bg="#EEEEEE", cursor="hand2")
+            settings_label.pack(side="right", padx=10)
+            settings_label.bind("<Button-1>", lambda e: self.open_settings())
         else:
-            tk.Label(header, text="⚙️", bg="#EEEEEE", font=("Inter", 12)).pack(side="right", padx=10)
+            settings_label = tk.Label(header, text="⚙️", bg="#EEEEEE", font=("Inter", 12), cursor="hand2")
+            settings_label.pack(side="right", padx=10)
+            settings_label.bind("<Button-1>", lambda e: self.open_settings())
 
         # ================== Ô TÌM KIẾM ==================
         search_frame = tk.Frame(self, bg="#ffffff")
         search_frame.pack(fill="x", padx=10, pady=(8, 5))
 
         self.search_var = tk.StringVar()
-        search_entry = ttk.Entry(search_frame, textvariable=self.search_var, font=("Inter", 11))
-        search_entry.pack(fill="x", ipady=4)
-        search_entry.insert(0, "Tìm kiếm cuộc trò chuyện")
+        
+        # Frame chứa Entry và nút X
+        search_input_frame = tk.Frame(search_frame, bg="#f0f0f0", relief="solid", borderwidth=1)
+        search_input_frame.pack(fill="x")
+        
+        self.search_entry = ttk.Entry(search_input_frame, textvariable=self.search_var, font=("Inter", 11))
+        self.search_entry.pack(side="left", fill="both", expand=True, ipady=4, padx=(5, 0))
+        self.search_entry.insert(0, "Tìm kiếm cuộc trò chuyện")
+        
+        # Nút X để xóa tìm kiếm
+        self.clear_button = tk.Button(
+            search_input_frame,
+            text="✕",
+            font=("Inter", 12),
+            bg="#f0f0f0",
+            fg="#999999",
+            relief="flat",
+            cursor="hand2",
+            command=self.clear_search,
+            width=2
+        )
+        self.clear_button.pack(side="right", padx=(0, 5))
+        self.clear_button.pack_forget()  # Ẩn ban đầu
 
         def clear_placeholder(event):
-            if search_entry.get() == "Tìm kiếm cuộc trò chuyện":
-                search_entry.delete(0, tk.END)
+            if self.search_entry.get() == "Tìm kiếm cuộc trò chuyện":
+                self.search_entry.delete(0, tk.END)
+                self.clear_button.pack(side="right", padx=(0, 5))  # Hiện nút X
 
         def restore_placeholder(event):
-            if not search_entry.get():
-                search_entry.insert(0, "Tìm kiếm cuộc trò chuyện")
+            if not self.search_entry.get():
+                self.search_entry.insert(0, "Tìm kiếm cuộc trò chuyện")
+                self.clear_button.pack_forget()  # Ẩn nút X
 
-        search_entry.bind("<FocusIn>", clear_placeholder)
-        search_entry.bind("<FocusOut>", restore_placeholder)
+        self.search_entry.bind("<FocusIn>", clear_placeholder)
+        self.search_entry.bind("<FocusOut>", restore_placeholder)
         self.search_var.trace_add("write", lambda *args: self.filter_contacts())
 
         # ================== STYLE SCROLLBAR ==================
@@ -177,10 +208,11 @@ class Sidebar(tk.Frame):
 
 # ================== XỬ LÝ CUỘN CHUỘT MƯỢT ==================
     def _on_mousewheel(self, event):
+        #  Tăng tốc độ cuộn từ 1 lên 3 units
         if event.num == 4 or event.delta > 0:
-            self.canvas.yview_scroll(-1, "units")
+            self.canvas.yview_scroll(-3, "units")
         elif event.num == 5 or event.delta < 0:
-            self.canvas.yview_scroll(1, "units")
+            self.canvas.yview_scroll(3, "units")
         return "break"
 
 # ================== HIỂN THỊ/ẨN SCROLLBAR ==================
@@ -206,23 +238,35 @@ class Sidebar(tk.Frame):
             widget.destroy()
 
         self.contact_items.clear()
+        self.contact_widgets.clear() # Clear dictionary
 
+        # 
         if contact_list:
             for c in contact_list:
                 name = c.get("name", "Người dùng")
                 message = c.get("message", "")
-                has_unread = c.get("has_unread_messages", False)
+                unread_count = c.get("unread_count", 0) 
+                time_obj = c.get("latest_message_time", datetime.min)
+                is_online = c.get("is_online", False) # <--- LẤY TRẠNG THÁI ONLINE
+                
+                # Định dạng thời gian
+                time_str = ""
+                if time_obj != datetime.min:
+                    time_str = time_obj.strftime("%H:%M") 
 
                 item = ContactItem(
                     self.contacts_frame,
                     self.avatar_icon,
                     name,
                     message,
-                    has_unread_messages=has_unread,
-                    on_select=self.handle_contact_select
+                    latest_time=time_str,
+                    unread_count=unread_count,
+                    on_select=self.handle_contact_select,
+                    is_online=is_online # <--- TRUYỀN VÀO ContactItem
                 )
                 item.pack(fill="x", pady=(0, 3))
                 self.contact_items.append(item)
+                self.contact_widgets[name] = item # Lưu widget theo tên
 
                 # Bind cuộn cho từng item và children
                 self._bind_mousewheel(item)
@@ -244,20 +288,45 @@ class Sidebar(tk.Frame):
             item.set_selected(item == selected_item)
 
         if self.on_contact_click:
+            # Lưu ý: Việc gọi mark_as_read đã được chuyển sang ChatScreen.py (tự động gọi khi mở chat)
+            
+            # Cập nhật số lượng tin chưa đọc thành 0 trên UI (Client-side)
+            if selected_item.unread_count > 0:
+                 selected_item.update_unread_count(0)
+                 # Cập nhật lại dữ liệu trong self.all_contacts (in-memory)
+                 # Logic này được xử lý trong Chat.py. Sidebar chỉ tập trung hiển thị
+            
+            #  XÓA KEYWORD TÌM KIẾM VÀ HIỆN LẠI DANH SÁCH ĐẦY ĐỦ
+            self.clear_search()
+            
             # Trả về (tên, avatar_icon) để mở ChatScreen bên phải
             self.on_contact_click(selected_item.name, self.avatar_icon)
-
+    
+    def clear_search(self):
+        """Xóa keyword tìm kiếm và hiện lại danh sách đầy đủ"""
+        self.search_var.set("")
+        self.search_entry.delete(0, tk.END)
+        self.search_entry.insert(0, "Tìm kiếm cuộc trò chuyện")
+        self.clear_button.pack_forget()  # Ẩn nút X
+        self.display_contacts(self.all_contacts)  # Hiện lại danh sách đầy đủ
+    
     def filter_contacts(self):
         """Lọc theo keyword trong search box"""
         keyword = self.search_var.get().strip().lower()
         if not keyword or keyword == "tìm kiếm cuộc trò chuyện":
             self.display_contacts(self.all_contacts)
+            self.clear_button.pack_forget()  # Ẩn nút X khi không có keyword
             return
+        
+        # Hiện nút X khi có keyword
+        self.clear_button.pack(side="right", padx=(0, 5))
+        
+        # Lọc danh bạ
         filtered = [c for c in self.all_contacts if keyword in c.get("name", "").lower()]
         self.display_contacts(filtered)
 
-# ================== LẤY AVATAR THEO TÊN ==================
     def get_avatar_for_contact(self, contact_name):
+        # ... (giữ nguyên)
         for item in self.contact_items:
             if item.name == contact_name:
                 return item.avatar_icon
@@ -265,13 +334,98 @@ class Sidebar(tk.Frame):
         # Ảnh mặc định
         default_icon = self._load_image("assets/icons/avatar_default.png", (45, 45))
         return default_icon if default_icon else self.avatar_icon
+    
+    
+    def update_contact_unread_count(self, contact_name, new_count):
+        """
+        Cập nhật số lượng tin nhắn chưa đọc cho một contact cụ thể.
+        Phương thức này được gọi từ Chat.py (ChatManager).
+        """
+        item = self.contact_widgets.get(contact_name)
+        if item:
+            item.update_unread_count(new_count)
+        else:
+            print(f" Warning: Contact widget not found for {contact_name}")
+    
+    def update_single_contact(self, contact_name, message_preview, latest_time):
+        """
+         Cập nhật CHỈ MỘT contact item thay vì reload toàn bộ
+        Tránh destroy ChatScreen đang active
+        """
+        print(f"📝 [Sidebar] update_single_contact called for {contact_name}")
+        item = self.contact_widgets.get(contact_name)
+        if item:
+            # Cập nhật message preview và time
+            time_str = latest_time.strftime("%H:%M") if latest_time else ""
+            item.update_message(message_preview, time_str)
+            print(f" [Sidebar] Updated contact {contact_name} - NO RELOAD!")
+        else:
+            print(f" [Sidebar] Contact widget not found: {contact_name}, calling display_contacts...")
+            # Fallback: reload toàn bộ nếu không tìm thấy widget
+            self.display_contacts(self.all_contacts)
+
+    # ==================  THÊM MỚI: CẬP NHẬT TRẠNG THÁI ONLINE/OFFLINE ==================
+    def update_contact_status(self, contact_name, is_online):
+        """
+        Cập nhật trạng thái online/offline cho một contact cụ thể.
+        Phương thức này được gọi từ Chat.py khi nhận event user_online/user_offline.
+        
+        Args:
+            contact_name (str): Tên contact cần cập nhật
+            is_online (bool): True nếu online, False nếu offline
+        """
+        item = self.contact_widgets.get(contact_name)
+        if item:
+            # Gọi phương thức của ContactItem để cập nhật hiển thị
+            if hasattr(item, 'update_online_status'):
+                item.update_online_status(is_online)
+            else:
+                # Fallback: Reload toàn bộ danh sách contacts
+                # (Cách này chậm hơn nhưng đảm bảo cập nhật)
+                for contact in self.all_contacts:
+                    if contact.get('name') == contact_name:
+                        contact['is_online'] = is_online
+                        break
+                self.display_contacts(self.all_contacts)
+        else:
+            print(f" Warning: Contact widget not found for {contact_name}")
+
+    # ================== BỔ SUNG: TÁI LẬP LỰA CHỌN SAU KHI REFRESH (GIỮ NGUYÊN) ==================
+    def reselect_contact(self, contact_name):
+        """
+        Tái lập trạng thái được chọn cho ContactItem sau khi danh sách được refresh.
+        """
+        for item in self.contact_items:
+            if item.name == contact_name:
+                item.set_selected(True)
+            else:
+                item.set_selected(False)
+
 
     # ================== ĐĂNG XUẤT ==================
     def logout_action(self):
         from tkinter import messagebox
+        from backend.Config.UserModel import UserModel
+        
         confirm = messagebox.askyesno("Xác nhận", "Bạn có chắc muốn đăng xuất?")
         if not confirm:
             return
+
+        #  CẬP NHẬT TRẠNG THÁI OFFLINE TRONG DB
+        if self.user_id:
+            try:
+                UserModel.update_online_status(self.user_id, False)
+                print(f" [LOGOUT] Set user {self.user_id} offline in DB")
+            except Exception as e:
+                print(f" [LOGOUT] Failed to update DB: {e}")
+        
+        #  DISCONNECT SOCKET (backend sẽ tự động emit user_offline)
+        if self.sio_client and self.sio_client.connected:
+            try:
+                self.sio_client.disconnect()
+                print(f" [LOGOUT] Socket disconnected for user {self.user_id}")
+            except Exception as e:
+                print(f" [LOGOUT] Failed to disconnect socket: {e}")
 
         # Quay về trang Home
         if self.controller:
@@ -279,6 +433,34 @@ class Sidebar(tk.Frame):
                 self.controller.show_frame("HomePage")
             except Exception as e:
                 print("Không thể show HomePage:", e)
+    
+    def open_settings(self):
+        """Mở popup cài đặt"""
+        from screens.SettingsDialog import SettingsDialog
+        from backend.Config.UserModel import UserModel
+        
+        # Lấy thông tin đầy đủ từ database
+        user_from_db = UserModel.get_user_by_id(self.user_id)
+        
+        if user_from_db:
+            user_data = {
+                'user_id': self.user_id,
+                'full_name': user_from_db.get('full_name', ''),
+                'email': user_from_db.get('email', ''),
+                'department': user_from_db.get('department', 'IT'),
+                'role': user_from_db.get('role', 'staff')
+            }
+        else:
+            # Fallback nếu không tìm thấy trong DB
+            user_data = {
+                'user_id': self.user_id,
+                'full_name': self.user_info.get('name', ''),
+                'email': self.user_info.get('email', ''),
+                'department': 'IT',
+                'role': 'staff'
+            }
+        
+        SettingsDialog(self, user_data)
 
     # ================== DỌN RÁC ==================
     def destroy(self):

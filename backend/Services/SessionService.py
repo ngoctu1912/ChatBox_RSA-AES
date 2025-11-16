@@ -50,7 +50,7 @@ class SessionService:
                 'conversation_id': conversation_id,
                 'initiator_user_id': initiator_user_id,
                 'created_at': datetime.now().isoformat(),
-                'key_exchanged': False  # Đánh dấu chưa exchange xong
+                'key_exchanged': True  # Đánh dấu chưa exchange xong
             }
             
             redis_key = f"session:{conversation_id}"
@@ -69,7 +69,7 @@ class SessionService:
             cursor.close()
             conn.close()
             
-            print(f"✅ Session key created for conversation {conversation_id}")
+            print(f" Session key created for conversation {conversation_id}")
             return aes_key
             
         except Exception as e:

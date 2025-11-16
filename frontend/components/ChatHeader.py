@@ -6,7 +6,7 @@ import os
 class ChatHeader(tk.Frame):
     """Component Header chung cho ChatScreen và EmptyChatScreen"""
     
-    def __init__(self, parent, contact_name, avatar_icon, current_user_id=None, partner_id=None, rsa_keys=None):
+    def __init__(self, parent, contact_name, avatar_icon, current_user_id=None, partner_id=None, rsa_keys=None, partner_is_online=False):
         super().__init__(parent, bg="#FFFFFF")
         self.parent_screen = parent
         self.contact_name = contact_name
@@ -14,6 +14,7 @@ class ChatHeader(tk.Frame):
         self.current_user_id = current_user_id
         self.partner_id = partner_id
         self.rsa_keys = rsa_keys or {}  
+        self.partner_is_online = partner_is_online
         
         # Thêm setup style ngay từ đầu
         self._setup_custom_scrollbar_style()
@@ -77,13 +78,23 @@ class ChatHeader(tk.Frame):
         except:
             pass
         
-        tk.Label(
+        # FIX: SỬ DỤNG TRẠNG THÁI THỰC TẾ
+        if self.partner_is_online:
+            status_text = "Đang hoạt động"
+            status_color = "green"
+        else:
+            status_text = "Offline"
+            status_color = "#888888" # Màu xám
+        
+        # Lưu label để cập nhật sau
+        self.status_label = tk.Label(
             status_frame,
-            text="Đang hoạt động",
+            text=status_text,
             font=("Inter", 9),
-            fg="green",
+            fg=status_color,
             bg="#FFFFFF"
-        ).pack(side="left")
+        )
+        self.status_label.pack(side="left")
         
         # Icon Key (RSA)
         try:
@@ -98,6 +109,12 @@ class ChatHeader(tk.Frame):
         
         key_label.pack(side="right", padx=15)
         key_label.bind("<Button-1>", self.toggle_rsa_panel)
+        
+        #  Nút Search
+        search_btn = tk.Label(header_frame, text="🔍", bg="#FFFFFF", 
+                            font=("Inter", 16), cursor="hand2")
+        search_btn.pack(side="right", padx=5)
+        search_btn.bind("<Button-1>", lambda e: self.parent_screen.toggle_search())
     
     def _create_rsa_panel(self):
         """Tạo panel hiển thị khóa RSA"""
@@ -278,3 +295,27 @@ class ChatHeader(tk.Frame):
             # GỌI LẠI _show_rsa_keys TRƯỚC KHI HIỂN THỊ để cập nhật nội dung
             self._show_rsa_keys() 
             self.rsa_panel.pack(fill="x", padx=20, pady=(10, 0), after=self.winfo_children()[0])
+    
+    def update_online_status(self, is_online: bool):
+        """Cập nhật trạng thái online/offline real-time"""
+        print(f" [ChatHeader] {self.contact_name}: Updating status to {'online' if is_online else 'offline'}")
+        
+        self.partner_is_online = is_online
+        
+        # Cập nhật màu sắc và text
+        if is_online:
+            status_text = "Đang hoạt động"
+            status_color = "green"
+        else:
+            status_text = "Offline"
+            status_color = "#888888"
+        
+        # Cập nhật UI
+        if hasattr(self, 'status_label'):
+            try:
+                self.status_label.config(text=status_text, fg=status_color)
+                print(f" [ChatHeader] {self.contact_name}: UI updated successfully")
+            except Exception as e:
+                print(f" [ChatHeader] {self.contact_name}: Error updating UI - {e}")
+        else:
+            print(f" [ChatHeader] {self.contact_name}: status_label not found")

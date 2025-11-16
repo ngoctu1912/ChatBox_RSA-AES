@@ -27,7 +27,7 @@ class WebSocketHandler:
             user_id = session.get('user_id')
             
             if not user_id:
-                print("❌ Unauthorized connection attempt")
+                print(" Unauthorized connection attempt")
                 return False
             
             # Lưu socket ID vào Redis
@@ -35,7 +35,7 @@ class WebSocketHandler:
             redis_client.hset('online_users', str(user_id), sid)
             redis_client.sadd('active_sids', sid)
             
-            print(f"✅ User {user_id} connected with SID {sid}")
+            print(f" User {user_id} connected with SID {sid}")
             
             # Thông báo online cho friends
             emit('user_online', {'user_id': user_id}, broadcast=True)
@@ -53,7 +53,7 @@ class WebSocketHandler:
                 redis_client.hdel('online_users', str(user_id))
                 redis_client.srem('active_sids', sid)
                 
-                print(f"👋 User {user_id} disconnected")
+                print(f" User {user_id} disconnected")
                 
                 # Thông báo offline
                 emit('user_offline', {'user_id': user_id}, broadcast=True)

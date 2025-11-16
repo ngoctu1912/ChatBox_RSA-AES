@@ -5,7 +5,7 @@ from screens.ForgotPassword import ForgotPasswordWindow
 import os
 
 from backend.Core.Authentication import AuthenticationService
-
+from backend.Services.RSAService import RSAService
 
 class LoginPage(tk.Frame):
     def __init__(self, parent, controller):
@@ -228,10 +228,11 @@ class LoginPage(tk.Frame):
             self.eye_btn.config(image=self.eye_open)
             self.password_visible = True
 
-    # ========= Xử lý sự kiện đăng nhập ==========
+
+    
     def on_login(self):
         email = self.email_entry.get().strip()
-        password = self.password_entry.get().strip()
+        password = self.password_entry.get()  # ✅ KHÔNG STRIP PASSWORD
 
         # Kiểm tra placeholder
         if email == 'abc123@gmail.com':
@@ -246,6 +247,18 @@ class LoginPage(tk.Frame):
             # Lưu thông tin user vào controller
             self.controller.current_user = user_data
             
+            user_id = user_data.get('user_id')
+            if user_id:
+                # EMIT LOGIN EVENT ĐỂ JOIN PERSONAL ROOM VÀ XỬ LÝ PENDING MESSAGES
+                if self.controller.sio_client and self.controller.sio_client.connected:
+                    try:
+                        self.controller.sio_client.emit('login_event', {'user_id': user_id})
+                        print(f" [LOGIN] Emitted login_event for user {user_id}")
+                    except Exception as e:
+                        print(f" [LOGIN] Error emitting login_event: {e}")
+                else:
+                    print(f" [LOGIN] SocketIO not connected, cannot emit login_event")
+
             # Chuyển sang màn hình Chat
             self.controller.show_frame("ChatPage")
         else:

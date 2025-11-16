@@ -8,7 +8,7 @@ from backend.Services.SessionService import SessionService
 
 class KeyManagementService:
     """
-    Xử lý mã hóa/giải mã AES key bằng RSA
+    Xử lý mã hóa/giải mã AES key bằng RSA và điều phối Key Exchange.
     """
     
     @staticmethod
@@ -101,52 +101,6 @@ class KeyManagementService:
             return None
     
     @staticmethod
-    def initiate_key_exchange(conversation_id: int, initiator_user_id: int, partner_user_id: int):
-        """
-        Bắt đầu quá trình key exchange
-        
-        Flow:
-        1. Tạo AES key mới
-        2. Mã hóa AES key bằng public key của partner
-        3. Trả về encrypted key để gửi qua WebSocket
-        
-        Args:
-            conversation_id: ID conversation
-            initiator_user_id: User bắt đầu chat
-            partner_user_id: User nhận
-            
-        Returns:
-            dict: {
-                'aes_key_encrypted': str,  # Để gửi cho partner
-                'aes_key_plain': str       # Để initiator lưu
-            }
-        """
-        try:
-            # Tạo AES key mới
-            aes_key = SessionService.create_session_key(conversation_id, initiator_user_id)
-            if not aes_key:
-                return None
-            
-            # Mã hóa AES key cho partner
-            encrypted_for_partner = KeyManagementService.encrypt_aes_key_for_user(
-                aes_key, 
-                partner_user_id
-            )
-            
-            if not encrypted_for_partner:
-                return None
-            
-            return {
-                'aes_key_encrypted': encrypted_for_partner,
-                'aes_key_plain': aes_key,
-                'conversation_id': conversation_id
-            }
-            
-        except Exception as e:
-            print(f"Error initiate_key_exchange: {e}")
-            return None
-    
-    @staticmethod
     def accept_key_exchange(encrypted_aes_key: str, user_id: int, conversation_id: int):
         """
         Partner nhận và giải mã AES key
@@ -164,8 +118,11 @@ class KeyManagementService:
             aes_key = KeyManagementService.decrypt_aes_key(encrypted_aes_key, user_id)
             
             if aes_key:
-                # Đánh dấu key exchange thành công
-                SessionService.mark_key_exchanged(conversation_id)
+                # BƯỚC CỐT LÕI: LƯU KEY AES PLAINTEXT VÀO SESSION SERVICE
+                SessionService.save_key_after_exchange(conversation_id, aes_key)
+                
+                # Đánh dấu key exchange thành công (Nếu hàm này tồn tại)
+                # SessionService.mark_key_exchanged(conversation_id) 
                 return aes_key
             
             return None
@@ -192,4 +149,45 @@ class KeyManagementService:
             
         except Exception as e:
             print(f"Error rotate_session_key: {e}")
+            return None
+        
+    @staticmethod
+    def initiate_key_exchange(conversation_id: int, initiator_user_id: int, partner_user_id: int):
+        """
+        Khởi tạo key exchange:
+        1. Tạo AES Key mới.
+        2. Lưu AES Key PLAIN vào Session Service (Redis).
+        3. Mã hóa AES Key bằng RSA Public Key của Partner.
+        
+        Returns:
+            dict: Dữ liệu cần thiết để gửi cho Partner qua WebSocket, hoặc None nếu lỗi.
+        """
+        try:
+            # 1. Tạo và Lưu AES Key (PLAIN) vào Session Service (Redis)
+            aes_key_plain_b64 = SessionService.create_session_key(conversation_id, initiator_user_id)
+            if not aes_key_plain_b64:
+                return None
+            
+            # 2. Mã hóa AES Key bằng RSA Public Key của Partner
+            encrypted_aes_key_b64 = KeyManagementService.encrypt_aes_key_for_user(
+                aes_key=aes_key_plain_b64, 
+                user_id=partner_user_id
+            )
+            
+            if not encrypted_aes_key_b64:
+                # Xóa key đã tạo trong Redis nếu mã hóa thất bại
+                SessionService.delete_session_key(conversation_id)
+                return None
+            
+            # 3. Trả về dữ liệu cần gửi qua WebSocket
+            return {
+                'conversation_id': conversation_id,
+                'initiator_id': initiator_user_id,
+                'partner_id': partner_user_id,
+                'encrypted_aes_key': encrypted_aes_key_b64,
+                'message': 'INITIATE_KEY_EXCHANGE' 
+            }
+            
+        except Exception as e:
+            print(f"Error initiate_key_exchange: {e}")
             return None

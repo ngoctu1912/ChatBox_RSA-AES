@@ -23,7 +23,7 @@ class WebSocketServer:
         # Initialize handlers
         self.handler = WebSocketHandler(self.socketio)
         
-        print("✅ WebSocket Server initialized")
+        print(" WebSocket Server initialized")
     
     def configure_app(self):
         """Cấu hình Flask app"""
@@ -41,13 +41,15 @@ class WebSocketServer:
         self.app.config['SESSION_TYPE'] = 'filesystem'
     
     def run(self, host='0.0.0.0', port=5000, debug=True):
-        """Chạy WebSocket server"""
-        print(f"🚀 Starting WebSocket server on {host}:{port}")
+        """Chạy WebSocket server với tùy chọn tắt reloader."""
+        print(f" Starting WebSocket server on {host}:{port}")
         self.socketio.run(
             self.app,
             host=host,
             port=port,
             debug=debug,
+            # CHỈNH SỬA TẠI ĐÂY: Thêm use_reloader=False vào socketio.run
+            use_reloader=False, 
             allow_unsafe_werkzeug=True  # Chỉ cho development
         )
 

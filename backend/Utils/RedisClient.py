@@ -18,9 +18,9 @@ class RedisClient:
             )
             # Test connection
             self.client.ping()
-            print("✅ Redis connected successfully")
+            print(" Redis connected successfully")
         except redis.ConnectionError as e:
-            print(f"❌ Redis connection failed: {e}")
+            print(f" Redis connection failed: {e}")
             self.client = None
 
     def set(self, key: str, value: Any, expire: Optional[int] = None) -> bool:

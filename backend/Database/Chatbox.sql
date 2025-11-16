@@ -8,8 +8,8 @@ CREATE TABLE users (
     user_id INT AUTO_INCREMENT PRIMARY KEY,
     full_name VARCHAR(100) NOT NULL,
     email VARCHAR(100) UNIQUE NOT NULL,
-    password_hash VARCHAR(255) NOT NULL,      -- bcrypt
-    department VARCHAR(100) DEFAULT 'IT',     -- luôn là IT
+    password_hash VARCHAR(255) NOT NULL,
+    department VARCHAR(100) DEFAULT 'IT',
     role ENUM('admin','staff','manager') DEFAULT 'staff',
     avatar_url VARCHAR(255) DEFAULT NULL,
     is_online BOOLEAN DEFAULT FALSE,
@@ -19,7 +19,7 @@ CREATE TABLE users (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- =============================================
--- 2. KHÓA RSA (1 user = 1 cặp)
+-- 2. KHÓA RSA (rsa_keys)
 -- =============================================
 CREATE TABLE rsa_keys (
     key_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -32,14 +32,13 @@ CREATE TABLE rsa_keys (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- =============================================
--- 3. CUỘC TRÒ CHUYỆN 1-1
+-- 3. CUỘC TRÒ CHUYỆN 1-1 (conversations)
+-- ĐÃ LOẠI BỎ aes_key_encrypted và iv
 -- =============================================
 CREATE TABLE conversations (
     conversation_id INT AUTO_INCREMENT PRIMARY KEY,
     user1_id INT NOT NULL,
     user2_id INT NOT NULL,
-    aes_key_encrypted TEXT NOT NULL, 
-    iv VARCHAR(32) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user1_id) REFERENCES users(user_id) ON DELETE CASCADE,
     FOREIGN KEY (user2_id) REFERENCES users(user_id) ON DELETE CASCADE,
@@ -47,21 +46,26 @@ CREATE TABLE conversations (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- =============================================
--- 4. TIN NHẮN
+-- 4. TIN NHẮN (messages)
+-- ĐÃ BỔ SUNG nonce_tag_data và aes_key_encrypted
 -- =============================================
 CREATE TABLE messages (
     message_id INT AUTO_INCREMENT PRIMARY KEY,
     conversation_id INT NOT NULL,
     sender_id INT NOT NULL,
     receiver_id INT NOT NULL,
+    
     message_encrypted TEXT NOT NULL,
-    message_hash VARCHAR(64) NOT NULL,
+    nonce_tag_data TEXT NOT NULL,           -- Nonce + Tag cho AES-GCM
+    aes_key_encrypted TEXT NULL,            -- Key AES đã mã hóa RSA (cho Key Rotation)
+    
+    message_hash VARCHAR(64) NULL,          -- HMAC (hoặc hash khác)
     sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (conversation_id) REFERENCES conversations(conversation_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- =============================================
--- 5. TRẠNG THÁI TIN NHẮN
+-- 5. TRẠNG THÁI TIN NHẮN (message_status)
 -- =============================================
 CREATE TABLE message_status (
     status_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -74,7 +78,22 @@ CREATE TABLE message_status (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- =============================================
--- DỮ LIỆU MẪU (bcrypt của "123456")
+-- 6. SESSION KEYS (session_keys)
+-- Dùng để backup AES session keys từ Redis
+-- =============================================
+CREATE TABLE session_keys (
+    session_id INT AUTO_INCREMENT PRIMARY KEY,
+    conversation_id INT NOT NULL,
+    aes_key_encrypted TEXT NOT NULL,
+    created_by INT NOT NULL,
+    expires_at TIMESTAMP NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (conversation_id) REFERENCES conversations(conversation_id) ON DELETE CASCADE,
+    FOREIGN KEY (created_by) REFERENCES users(user_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- =============================================
+-- DỮ LIỆU MẪU (USERS)
 -- =============================================
 INSERT INTO users (full_name, email, password_hash, role, is_online)
 VALUES
@@ -90,7 +109,7 @@ VALUES
 ('Lộc', 'loc@company.com', '$2b$12$3y.nTqG3Pg/fq8WusYZ5duyL1gHmjxwV8ByPgjm.LdpE9GRzP50eC', 'staff', TRUE);
 
 -- =============================================
--- KHÓA RSA MẪU
+-- DỮ LIỆU MẪU (RSA KEYS)
 -- =============================================
 INSERT INTO rsa_keys (user_id, public_key, private_key_encrypted)
 VALUES
@@ -106,34 +125,37 @@ VALUES
 (10, 'PUBLIC_KEY_LOC', 'PRIVATE_KEY_LOC');
 
 -- =============================================
--- CUỘC TRÒ CHUYỆN MẪU
+-- DỮ LIỆU MẪU (CONVERSATIONS)
+-- Giữ nguyên ID, loại bỏ AES key/IV
 -- =============================================
-INSERT INTO conversations (user1_id, user2_id, aes_key_encrypted, iv)
+INSERT INTO conversations (user1_id, user2_id)
 VALUES
-(1, 2, 'RSA_ENC_AES_ADMIN_LAN', 'iv0001'),
-(1, 3, 'RSA_ENC_AES_ADMIN_MINH', 'iv0002'),
-(2, 3, 'RSA_ENC_AES_LAN_MINH', 'iv0003'),
-(3, 5, 'RSA_ENC_AES_MINH_DUNG', 'iv0004'),
-(1, 5, 'RSA_ENC_AES_ADMIN_DUNG', 'iv0005');
+(1, 2), -- Admin và Lan
+(1, 3), -- Admin và Minh
+(2, 3), -- Lan và Minh
+(3, 5), -- Minh và Dũng
+(1, 5); -- Admin và Dũng
 
 -- =============================================
--- TIN NHẮN MẪU
+-- DỮ LIỆU MẪU (MESSAGES)
+-- SỬ DỤNG DỮ LIỆU MÃ HÓA GIẢ LẬP
+-- (nonce_tag_data = nonce:tag, aes_key_encrypted = NULL vì dùng Session Key)
 -- =============================================
-INSERT INTO messages (conversation_id, sender_id, receiver_id, message_encrypted, message_hash)
+INSERT INTO messages (conversation_id, sender_id, receiver_id, message_encrypted, nonce_tag_data, message_hash, aes_key_encrypted)
 VALUES
-(1, 1, 2, 'Lan, kiểm tra lại module login nhé.', 'HASH_001'),
-(1, 2, 1, 'Ok admin, em đã sửa lỗi xác thực.', 'HASH_002'),
-(2, 1, 3, 'Minh, tiến độ phần mã hóa tới đâu?', 'HASH_003'),
-(2, 3, 1, 'Em đang test RSA-AES, tầm 70% rồi.', 'HASH_004'),
-(3, 2, 3, 'Minh, gửi bản mới của UI cho chị.', 'HASH_005'),
-(3, 3, 2, 'Dạ chị Lan, em vừa commit lên repo rồi ạ.', 'HASH_006'),
-(4, 3, 5, 'Anh Dũng, server IT đã restart xong.', 'HASH_007'),
-(4, 5, 3, 'Tốt, kiểm tra lại log giúp anh.', 'HASH_008'),
-(5, 1, 5, 'Dũng, tuần sau họp tiến độ nha.', 'HASH_009'),
-(5, 5, 1, 'Ok Admin, em note lại rồi.', 'HASH_010');
+(1, 1, 2, 'Lan, kiểm tra lại module login nhé.', 'NONCE01:TAG01', 'HASH_001', NULL),
+(1, 2, 1, 'Ok admin, em đã sửa lỗi xác thực.', 'NONCE02:TAG02', 'HASH_002', NULL),
+(2, 1, 3, 'Minh, tiến độ phần mã hóa tới đâu?', 'NONCE03:TAG03', 'HASH_003', NULL),
+(2, 3, 1, 'Em đang test RSA-AES, tầm 70% rồi.', 'NONCE04:TAG04', 'HASH_004', NULL),
+(3, 2, 3, 'Minh, gửi bản mới của UI cho chị.', 'NONCE05:TAG05', 'HASH_005', NULL),
+(3, 3, 2, 'Dạ chị Lan, em vừa commit lên repo rồi ạ.', 'NONCE06:TAG06', 'HASH_006', NULL),
+(4, 3, 5, 'Anh Dũng, server IT đã restart xong.', 'NONCE07:TAG07', 'HASH_007', NULL),
+(4, 5, 3, 'Tốt, kiểm tra lại log giúp anh.', 'NONCE08:TAG08', 'HASH_008', NULL),
+(5, 1, 5, 'Dũng, tuần sau họp tiến độ nha.', 'NONCE09:TAG09', 'HASH_009', NULL),
+(5, 5, 1, 'Ok Admin, em note lại rồi.', 'NONCE10:TAG10', 'HASH_010', NULL);
 
 -- =============================================
--- TRẠNG THÁI TIN NHẮN
+-- DỮ LIỆU MẪU (MESSAGE STATUS)
 -- =============================================
 INSERT INTO message_status (message_id, user_id, is_read)
 VALUES
@@ -147,3 +169,25 @@ VALUES
 (8, 3, TRUE),
 (9, 5, FALSE),
 (10, 1, TRUE);
+
+
+-- Đảm bảo bạn đang sử dụng kiểu TEXT hoặc LONGTEXT
+ALTER TABLE rsa_keys 
+MODIFY public_key TEXT NOT NULL,
+MODIFY private_key_encrypted TEXT NOT NULL;
+
+CREATE TABLE IF NOT EXISTS pending_messages (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    sender_id INT NOT NULL,
+    receiver_id INT NOT NULL,
+    conversation_id INT NOT NULL,
+    plain_text TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    FOREIGN KEY (sender_id) REFERENCES users(user_id) ON DELETE CASCADE,
+    FOREIGN KEY (receiver_id) REFERENCES users(user_id) ON DELETE CASCADE,
+    FOREIGN KEY (conversation_id) REFERENCES conversations(conversation_id) ON DELETE CASCADE,
+    
+    INDEX idx_receiver (receiver_id),
+    INDEX idx_created (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

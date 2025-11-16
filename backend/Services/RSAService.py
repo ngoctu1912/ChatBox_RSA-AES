@@ -1,6 +1,8 @@
-from cryptography.hazmat.primitives.asymmetric import rsa
-from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa, padding
+from cryptography.hazmat.primitives import serialization, hashes
+from cryptography.hazmat.backends import default_backend
 from backend.Config.ConnectDB import connect_to_database
+import base64
 
 
 class RSAService:
@@ -9,12 +11,13 @@ class RSAService:
     - Tạo cặp khóa RSA
     - Lưu khóa vào database
     - Lấy khóa công khai/riêng tư
+    - MÃ HÓA và GIẢI MÃ Key AES (đã bổ sung)
     """
 
     @staticmethod
     def generate_rsa_keypair(key_size=2048):
         """
-        Sinh cặp khóa RSA mới
+        Sinh cặp khóa RSA mới.
         
         Args:
             key_size (int): Kích thước khóa (mặc định 2048 bit)
@@ -26,7 +29,8 @@ class RSAService:
             # Sinh private key
             private_key = rsa.generate_private_key(
                 public_exponent=65537,
-                key_size=key_size
+                key_size=key_size,
+                backend=default_backend()
             )
             
             # Lấy public key từ private key
@@ -54,12 +58,8 @@ class RSAService:
     @staticmethod
     def create_rsa_key_for_user(user_id, key_size=2048):
         """
-        Sinh cặp khóa RSA và lưu vào database cho user
+        Sinh cặp khóa RSA và lưu vào database cho user.
         
-        Args:
-            user_id (int): ID của user
-            key_size (int): Kích thước khóa (mặc định 2048 bit)
-            
         Returns:
             bool: True nếu thành công, False nếu thất bại
         """
@@ -91,15 +91,7 @@ class RSAService:
 
     @staticmethod
     def get_public_key(user_id):
-        """
-        Lấy khóa công khai RSA mới nhất của user
-        
-        Args:
-            user_id (int): ID của user
-            
-        Returns:
-            str: Public key ở dạng PEM, hoặc None nếu không tìm thấy
-        """
+        """Lấy Khóa Công khai RSA của user"""
         try:
             conn, cursor = connect_to_database()
             query = """
@@ -121,15 +113,7 @@ class RSAService:
 
     @staticmethod
     def get_private_key(user_id):
-        """
-        Lấy khóa riêng tư RSA mới nhất của user
-        
-        Args:
-            user_id (int): ID của user
-            
-        Returns:
-            str: Private key ở dạng PEM, hoặc None nếu không tìm thấy
-        """
+        """Lấy Khóa Riêng tư RSA của user"""
         try:
             conn, cursor = connect_to_database()
             query = """
@@ -151,15 +135,7 @@ class RSAService:
 
     @staticmethod
     def get_keypair(user_id):
-        """
-        Lấy cả cặp khóa (public + private) của user
-        
-        Args:
-            user_id (int): ID của user
-            
-        Returns:
-            dict: {"public_key": str, "private_key": str} hoặc None
-        """
+        """Lấy cả cặp khóa (Công khai và Riêng tư)"""
         try:
             conn, cursor = connect_to_database()
             query = """
@@ -187,22 +163,102 @@ class RSAService:
             print(f"Error get_keypair: {e}")
             return None
 
+    # ========================================
+    # MÃ HÓA / GIẢI MÃ KEY AES BẰNG RSA (FIX)
+    # ========================================
     @staticmethod
-    def get_user_keys(current_user_id, partner_id):
+    def encrypt_aes_key(partner_id, aes_key_plain_b64):
         """
-        Lấy cặp khóa RSA của cả 2 user để hiển thị hoặc sử dụng
+        Mã hóa AES Session Key (Base64) bằng Public Key RSA của đối tác.
         
         Args:
-            current_user_id (int): ID của user hiện tại
-            partner_id (int): ID của đối phương
+            partner_id (int): ID của đối tác
+            aes_key_plain_b64 (str): AES Key plaintext ở dạng Base64
             
         Returns:
-            dict: {
-                "my_public_key": str,
-                "my_private_key": str,
-                "partner_public_key": str
-            } hoặc dict với các giá trị None nếu không tìm thấy
+            str: AES Key đã mã hóa bằng RSA, hoặc None nếu lỗi
         """
+        try:
+            public_key_pem = RSAService.get_public_key(partner_id)
+            if not public_key_pem:
+                print(f"Error encrypt_aes_key: Partner {partner_id} public key not found.")
+                return None
+            
+            # Tải Public Key từ PEM string
+            public_key = serialization.load_pem_public_key(
+                public_key_pem.encode('utf-8'),
+                backend=default_backend()
+            )
+            
+            # Giải mã Base64 Key AES để lấy bytes
+            aes_key_bytes = base64.b64decode(aes_key_plain_b64)
+
+            # Mã hóa Key AES bằng Public Key RSA (dùng OAEP Padding)
+            encrypted_aes_key = public_key.encrypt(
+                aes_key_bytes,
+                padding.OAEP(
+                    mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                    algorithm=hashes.SHA256(),
+                    label=None
+                )
+            )
+
+            # Trả về Key đã mã hóa dưới dạng Base64
+            return base64.b64encode(encrypted_aes_key).decode('utf-8')
+            
+        except Exception as e:
+            print(f"Error encrypt_aes_key: {e}")
+            return None
+
+    @staticmethod
+    def decrypt_aes_key(user_id, encrypted_aes_key_b64):
+        """
+        Giải mã AES Session Key (Base64) bằng Private Key RSA của user hiện tại.
+        
+        Args:
+            user_id (int): ID của user hiện tại
+            encrypted_aes_key_b64 (str): AES Key đã mã hóa bằng RSA ở dạng Base64
+            
+        Returns:
+            str: AES Key plaintext Base64, hoặc None nếu thất bại
+        """
+        try:
+            private_key_pem = RSAService.get_private_key(user_id)
+            if not private_key_pem:
+                print(f"Error decrypt_aes_key: Private key not found for user {user_id}.")
+                return None
+            
+            # Tải Private Key (Private Key được lưu dưới dạng PEM string)
+            private_key = serialization.load_pem_private_key(
+                private_key_pem.encode('utf-8'),
+                password=None,
+                backend=default_backend()
+            )
+            
+            # Giải mã Base64 Key AES đã mã hóa
+            encrypted_aes_key_bytes = base64.b64decode(encrypted_aes_key_b64)
+
+            # Giải mã Key AES bằng Private Key RSA
+            decrypted_aes_key_bytes = private_key.decrypt(
+                encrypted_aes_key_bytes,
+                padding.OAEP(
+                    mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                    algorithm=hashes.SHA256(),
+                    label=None
+                )
+            )
+
+            # Trả về Key đã giải mã dưới dạng Base64
+            return base64.b64encode(decrypted_aes_key_bytes).decode('utf-8')
+            
+        except Exception as e:
+            print(f"Error decrypt_aes_key: {e}")
+            return None
+
+
+    @staticmethod
+    def get_user_keys(current_user_id, partner_id):
+        """Lấy tất cả các khóa cần thiết cho việc hiển thị/trao đổi"""
         try:
             # Lấy khóa của user hiện tại
             my_keypair = RSAService.get_keypair(current_user_id)
@@ -232,13 +288,6 @@ class RSAService:
     def delete_old_keys(user_id, keep_latest=1):
         """
         Xóa các khóa cũ, chỉ giữ lại N khóa mới nhất
-        
-        Args:
-            user_id (int): ID của user
-            keep_latest (int): Số lượng khóa mới nhất cần giữ lại
-            
-        Returns:
-            bool: True nếu thành công
         """
         try:
             conn, cursor = connect_to_database()
@@ -267,4 +316,38 @@ class RSAService:
             
         except Exception as e:
             print(f"Error delete_old_keys: {e}")
+            return False
+        
+   
+    
+    @staticmethod
+    def ensure_keypair_exists_or_create(user_id: int):
+        """
+        Kiểm tra xem user đã có khóa RSA hợp lệ chưa. Nếu chưa có, tạo mới và lưu.
+        Returns: bool (True nếu có khóa hoặc tạo thành công, False nếu lỗi)
+        """
+        try:
+            # Kiểm tra sự tồn tại của Public Key
+            existing_key = RSAService.get_public_key(user_id) 
+            
+            # NẾU ĐÃ CÓ KHÓA → RETURN TRUE
+            if existing_key:
+                print(f" RSA keypair already exists for user {user_id}")
+                return True
+            
+            #  CHƯA CÓ KHÓA → TẠO MỚI
+            print(f" RSA keypair not found for user {user_id}. Creating new keypair...")
+            success = RSAService.create_rsa_key_for_user(user_id)
+            
+            if success:
+                print(f" RSA keypair created successfully for user {user_id}.")
+                return True
+            else:
+                print(f" Failed to create RSA keypair for user {user_id}.")
+                return False
+                
+        except Exception as e:
+            print(f" Critical error in ensure_keypair_exists_or_create: {e}")
+            import traceback
+            traceback.print_exc()
             return False

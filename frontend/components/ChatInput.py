@@ -14,8 +14,8 @@ class ChatInput(tk.Frame):
     
     def _create_widgets(self):
         # Dùng grid để căn đều
-        self.columnconfigure(0, weight=1)
-        self.columnconfigure(1, weight=0)
+        self.columnconfigure(0, weight=1)  # Entry
+        self.columnconfigure(1, weight=0)  # Send button
         self.rowconfigure(0, weight=1)
         
         # Container để căn giữa text entry
