@@ -97,16 +97,16 @@ CREATE TABLE session_keys (
 -- =============================================
 INSERT INTO users (full_name, email, password_hash, role, is_online)
 VALUES
-('Trần Thanh', 'luyn@company.com', '$2b$12$3y.nTqG3Pg/fq8WusYZ5duyL1gHmjxwV8ByPgjm.LdpE9GRzP50eC', 'staff', TRUE),
-('Thu Luyện', 'thanh@company.com', '$2b$12$3y.nTqG3Pg/fq8WusYZ5duyL1gHmjxwV8ByPgjm.LdpE9GRzP50eC', 'staff', TRUE),
-('Ngọc Tú', 'ngoctu@company.com', '$2b$12$3y.nTqG3Pg/fq8WusYZ5duyL1gHmjxwV8ByPgjm.LdpE9GRzP50eC', 'staff', TRUE),
+('Thu Luyện', 'luyn@company.com', '$2b$12$3y.nTqG3Pg/fq8WusYZ5duyL1gHmjxwV8ByPgjm.LdpE9GRzP50eC', 'admin', FALSE),
+('Lan', 'lan@company.com', '$2b$12$3y.nTqG3Pg/fq8WusYZ5duyL1gHmjxwV8ByPgjm.LdpE9GRzP50eC', 'staff', FALSE),
+('Minh', 'minh@company.com', '$2b$12$3y.nTqG3Pg/fq8WusYZ5duyL1gHmjxwV8ByPgjm.LdpE9GRzP50eC', 'staff', FALSE),
 ('Hương', 'huong@company.com', '$2b$12$3y.nTqG3Pg/fq8WusYZ5duyL1gHmjxwV8ByPgjm.LdpE9GRzP50eC', 'staff', FALSE),
-('Dũng', 'dung@company.com', '$2b$12$3y.nTqG3Pg/fq8WusYZ5duyL1gHmjxwV8ByPgjm.LdpE9GRzP50eC', 'manager', TRUE),
+('Dũng', 'dung@company.com', '$2b$12$3y.nTqG3Pg/fq8WusYZ5duyL1gHmjxwV8ByPgjm.LdpE9GRzP50eC', 'manager', FALSE),
 ('Bình', 'binh@company.com', '$2b$12$3y.nTqG3Pg/fq8WusYZ5duyL1gHmjxwV8ByPgjm.LdpE9GRzP50eC', 'staff', FALSE),
 ('Trang', 'trang@company.com', '$2b$12$3y.nTqG3Pg/fq8WusYZ5duyL1gHmjxwV8ByPgjm.LdpE9GRzP50eC', 'staff', FALSE),
 ('Phúc', 'phuc@company.com', '$2b$12$3y.nTqG3Pg/fq8WusYZ5duyL1gHmjxwV8ByPgjm.LdpE9GRzP50eC', 'staff', FALSE),
-('Hải', 'hai@company.com', '$2b$12$3y.nTqG3Pg/fq8WusYZ5duyL1gHmjxwV8ByPgjm.LdpE9GRzP50eC', 'staff', TRUE),
-('Lộc', 'loc@company.com', '$2b$12$3y.nTqG3Pg/fq8WusYZ5duyL1gHmjxwV8ByPgjm.LdpE9GRzP50eC', 'staff', TRUE);
+('Hải', 'hai@company.com', '$2b$12$3y.nTqG3Pg/fq8WusYZ5duyL1gHmjxwV8ByPgjm.LdpE9GRzP50eC', 'staff', FALSE),
+('Lộc', 'loc@company.com', '$2b$12$3y.nTqG3Pg/fq8WusYZ5duyL1gHmjxwV8ByPgjm.LdpE9GRzP50eC', 'staff', FALSE);
 
 -- =============================================
 -- DỮ LIỆU MẪU (RSA KEYS)
@@ -130,11 +130,11 @@ VALUES
 -- =============================================
 INSERT INTO conversations (user1_id, user2_id)
 VALUES
-(1, 2),
-(1, 3), 
-(2, 3), 
-(3, 5), 
-(1, 5); 
+(1, 2), -- Admin và Lan
+(1, 3), -- Admin và Minh
+(2, 3), -- Lan và Minh
+(3, 5), -- Minh và Dũng
+(1, 5); -- Admin và Dũng
 
 -- =============================================
 -- DỮ LIỆU MẪU (MESSAGES)

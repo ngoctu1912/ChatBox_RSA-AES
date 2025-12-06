@@ -72,16 +72,16 @@ class ChatScreen(tk.Frame):
         
         # === ĐĂNG KÝ SOCKET EVENTS (XÓA CŨ TRƯỚC) ===
         if self.sio_client and self.sio_client.connected:
-            # Xóa event handlers cũ
+            # Xóa event handlers cũ (KHÔNG XÓA new_message để giữ global handler)
             try:
-                self.sio_client.off('new_message')
                 self.sio_client.off('marked_as_read')
                 self.sio_client.off('message_recalled')
             except:
                 pass
             
-            # Đăng ký mới
-            self.sio_client.on('new_message', self.on_new_message)
+            # Đăng ký ChatScreen-specific handlers
+            # KHÔNG đăng ký new_message ở đây - để global handler xử lý
+            # self.sio_client.on('new_message', self.on_new_message)
             self.sio_client.on('marked_as_read', self.on_marked_as_read)
             self.sio_client.on('message_recalled', self.on_message_recalled)
             print(f" Socket events registered for ChatScreen conv {self.conversation_id}")
@@ -149,19 +149,25 @@ class ChatScreen(tk.Frame):
                         break
         
         plain_text, is_valid = ChatManager.decrypt_received_message(data, self.current_user_id)
+        
+        # Nếu giải mã thất bại và là tin nhắn của mình, giữ lại local echo
+        if not is_valid and sender_id == self.current_user_id:
+            print(f"⚠️ [ChatScreen] Decryption failed for own message, keeping local echo")
+            return
+            
         self.display_received_message(sender_id, plain_text, is_valid, data.get('sent_at'), is_read=False, message_id=message_id)
         
-        #  Debounce sidebar update để giảm lag
-        if self.chat_manager and plain_text:
+        # Cập nhật sidebar NGAY LẬP TỨC (không delay)
+        if self.chat_manager and plain_text and not plain_text.startswith('[ERROR'):
             try:
                 latest_time_obj = datetime.fromisoformat(data.get('sent_at'))
                 
-                # Delay 100ms để tránh update quá nhiều
-                self.after(100, lambda: self.chat_manager.update_sidebar_after_send(
+                # Cập nhật ngay, không delay
+                self.chat_manager.update_sidebar_after_send(
                     self.contact_name, 
                     plain_text.strip()[:30] + "...", 
                     latest_time_obj
-                ))
+                )
             except Exception as e:
                 print(f"Lỗi cập nhật sidebar khi nhận tin: {e}")
         
@@ -433,18 +439,29 @@ class ChatScreen(tk.Frame):
         # 2. Xóa nội dung nhập
         self.chat_input.clear()
 
-        # 3. Cập nhật sidebar (FIX: Bổ sung reset unread count)
+        # 3. Cập nhật sidebar NGAY LẬP TỨC (FIX: Bổ sung reset unread count)
         if self.chat_manager:
             try:
-                 self.chat_manager.update_sidebar_after_send(
-                     self.contact_name, 
-                     plain_text.strip()[:30] + "...", 
-                     latest_time_obj
-                 )
-                 # Đảm bảo unread count là 0 cho tin nhắn mình gửi
-                 self.chat_manager.update_unread_count_in_sidebar(self.contact_name, 0)
-            except AttributeError as e:
-                 print(f"Lỗi: Không thể cập nhật Sidebar - {e}")
+                 # Cập nhật dữ liệu contacts
+                 contact = self.chat_manager.contacts_data.get(self.contact_name)
+                 if contact:
+                     contact['message'] = plain_text.strip()[:30] + "..."
+                     contact['latest_message_time'] = latest_time_obj
+                     contact['unread_count'] = 0
+                     
+                     # Sort lại
+                     self.chat_manager.contacts.sort(key=lambda x: x.get('latest_message_time', datetime.min), reverse=True)
+                     
+                     # Cập nhật UI sidebar
+                     self.chat_manager.sidebar.update_single_contact(
+                         self.contact_name,
+                         plain_text.strip()[:30] + "...",
+                         latest_time_obj
+                     )
+                 
+                 print(f"✅ [ChatScreen] Updated sidebar for {self.contact_name}")
+            except Exception as e:
+                 print(f"❌ [ChatScreen] Cannot update Sidebar - {e}")
         
         # 4. Join room VÀ gửi tin nhắn
         # Đảm bảo join room TRƯỚC khi gửi để nhận được new_message event
@@ -456,11 +473,12 @@ class ChatScreen(tk.Frame):
             self._joined_room = True
             print(f" Joined room before sending message")
 
-        self.after(50, lambda: self.sio_client.emit('send_message', {
+        # Gửi tin nhắn ngay lập tức (không delay)
+        self.sio_client.emit('send_message', {
             'partner_id': self.partner_id,
             'conversation_id': self.conversation_id,
             'plain_text': plain_text
-        }))
+        })
 
     # ========================================
     # HIỂN THỊ TIN NHẮN

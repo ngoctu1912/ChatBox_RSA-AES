@@ -24,7 +24,7 @@ class SettingsDialog(tk.Toplevel):
         self.geometry(f"500x550+{x}+{y}")
         
         # Header
-        header = tk.Frame(self, bg="#4CAF50", height=60)
+        header = tk.Frame(self, bg="#0099FF", height=60)
         header.pack(fill="x")
         header.pack_propagate(False)
         
@@ -32,7 +32,7 @@ class SettingsDialog(tk.Toplevel):
             header,
             text="⚙️ Cài đặt",
             font=("Inter", 18, "bold"),
-            bg="#4CAF50",
+            bg="#0099FF",
             fg="white"
         ).pack(pady=15)
         
@@ -64,17 +64,17 @@ class SettingsDialog(tk.Toplevel):
         
         # Mật khẩu hiện tại
         tk.Label(container, text="Mật khẩu hiện tại:", font=("Inter", 10), bg="#FFFFFF").pack(anchor="w", pady=(5, 0))
-        self.current_password_entry = tk.Entry(container, show="•", font=("Inter", 11), relief="solid", borderwidth=1)
+        self.current_password_entry = tk.Entry(container, show="•", font=("Inter", 11), relief="solid", borderwidth=1, highlightthickness=1, highlightbackground="#CCCCCC", highlightcolor="#0099FF")
         self.current_password_entry.pack(fill="x", ipady=6, pady=(5, 15))
         
         # Mật khẩu mới
         tk.Label(container, text="Mật khẩu mới:", font=("Inter", 10), bg="#FFFFFF").pack(anchor="w", pady=(5, 0))
-        self.new_password_entry = tk.Entry(container, show="•", font=("Inter", 11), relief="solid", borderwidth=1)
+        self.new_password_entry = tk.Entry(container, show="•", font=("Inter", 11), relief="solid", borderwidth=1, highlightthickness=1, highlightbackground="#CCCCCC", highlightcolor="#0099FF")
         self.new_password_entry.pack(fill="x", ipady=6, pady=(5, 15))
         
         # Xác nhận mật khẩu mới
         tk.Label(container, text="Xác nhận mật khẩu mới:", font=("Inter", 10), bg="#FFFFFF").pack(anchor="w", pady=(5, 0))
-        self.confirm_password_entry = tk.Entry(container, show="•", font=("Inter", 11), relief="solid", borderwidth=1)
+        self.confirm_password_entry = tk.Entry(container, show="•", font=("Inter", 11), relief="solid", borderwidth=1, highlightthickness=1, highlightbackground="#CCCCCC", highlightcolor="#0099FF")
         self.confirm_password_entry.pack(fill="x", ipady=6, pady=(5, 20))
         
         # Nút Lưu
@@ -82,7 +82,7 @@ class SettingsDialog(tk.Toplevel):
             container,
             text="Lưu thay đổi",
             font=("Inter", 11, "bold"),
-            bg="#4CAF50",
+            bg="#0099FF",
             fg="white",
             relief="flat",
             cursor="hand2",

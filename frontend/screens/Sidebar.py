@@ -353,16 +353,55 @@ class Sidebar(tk.Frame):
         Tránh destroy ChatScreen đang active
         """
         print(f"📝 [Sidebar] update_single_contact called for {contact_name}")
-        item = self.contact_widgets.get(contact_name)
-        if item:
-            # Cập nhật message preview và time
-            time_str = latest_time.strftime("%H:%M") if latest_time else ""
-            item.update_message(message_preview, time_str)
-            print(f" [Sidebar] Updated contact {contact_name} - NO RELOAD!")
-        else:
-            print(f" [Sidebar] Contact widget not found: {contact_name}, calling display_contacts...")
-            # Fallback: reload toàn bộ nếu không tìm thấy widget
-            self.display_contacts(self.all_contacts)
+        
+        # Lưu lại contact đang được chọn (ưu tiên contact_name nếu không có selected nào)
+        currently_selected = contact_name  # Mặc định là contact đang update
+        for item in self.contact_items:
+            if item.is_selected:
+                currently_selected = item.name
+                print(f" [Sidebar] Currently selected: {currently_selected}")
+                break
+        
+        if not currently_selected:
+            currently_selected = contact_name
+            print(f" [Sidebar] No selection found, using contact_name: {contact_name}")
+        
+        # Cập nhật dữ liệu contact trong all_contacts
+        contact_updated = False
+        for contact in self.all_contacts:
+            if contact.get('name') == contact_name:
+                contact['message'] = message_preview
+                contact['latest_message_time'] = latest_time
+                contact_updated = True
+                break
+        
+        if not contact_updated:
+            print(f" [Sidebar] Contact not found in all_contacts: {contact_name}")
+            return
+        
+        # Sort lại danh sách
+        self.all_contacts.sort(key=lambda x: x.get('latest_message_time', datetime.min), reverse=True)
+        
+        # Reload sidebar với danh sách đã sort
+        self.display_contacts(self.all_contacts)
+        
+        # Khôi phục trạng thái selected (với delay nhỏ để đảm bảo UI đã render)
+        def restore_selection():
+            try:
+                for item in self.contact_items:
+                    if not item.winfo_exists():
+                        continue
+                    if item.name == currently_selected:
+                        item.set_selected(True)
+                        print(f"✅ [Sidebar] Restored selection for {currently_selected}")
+                        return
+                print(f"❌ [Sidebar] Could not find item to restore selection: {currently_selected}")
+            except Exception as e:
+                print(f"⚠️ [Sidebar] Error restoring selection: {e}")
+        
+        self.after(10, restore_selection)
+        
+        print(f" [Sidebar] Reloaded and sorted contacts after update")
 
     # ==================  THÊM MỚI: CẬP NHẬT TRẠNG THÁI ONLINE/OFFLINE ==================
     def update_contact_status(self, contact_name, is_online):

@@ -122,7 +122,11 @@ class Chat(tk.Frame):
         self.sio_client.on('user_online', self.on_user_status_changed)
         self.sio_client.on('user_offline', self.on_user_status_changed)
         
-        # 2. Lắng nghe tin nhắn mới từ BẤT KỲ conversation nào
+        # 2. XÓA EVENT CŨ VÀ ĐĂNG KÝ MỚI - Lắng nghe tin nhắn mới từ BẤT KỲ conversation nào
+        try:
+            self.sio_client.off('new_message')
+        except:
+            pass
         self.sio_client.on('new_message', self.on_global_new_message)
         
         # 3. LẮng nghe pending messages được xử lý
@@ -136,8 +140,25 @@ class Chat(tk.Frame):
         
         print(" Global WebSocket events registered")
         
+        #  JOIN TẤT CẢ CONVERSATION ROOMS
+        self.after(100, self.join_all_conversations)
+        
         #  TẢI LẠI TRẠNG THÁI ONLINE TỪ DATABASE
-        self.after(100, self.refresh_online_status_from_db)
+        self.after(200, self.refresh_online_status_from_db)
+    
+    def join_all_conversations(self):
+        """Join tất cả conversation rooms để nhận tin nhắn real-time"""
+        try:
+            for contact in self.contacts:
+                conv_id = contact.get('conversation_id')
+                if conv_id:
+                    self.sio_client.emit('join_conversation', {
+                        'conversation_id': conv_id,
+                        'user_id': self.user_id
+                    })
+            print(f"🔗 [Chat] Joined {len(self.contacts)} conversation rooms")
+        except Exception as e:
+            print(f"❌ [Chat] Error joining conversations: {e}")
     
     def refresh_online_status_from_db(self):
         """Tải lại trạng thái online từ database"""
@@ -294,10 +315,13 @@ class Chat(tk.Frame):
         """
         Xử lý khi có tin nhắn mới đến (bất kỳ conversation nào).
         """
+        print(f"🔔🔔🔔 [Chat] on_global_new_message TRIGGERED! conv={data.get('conversation_id')}, sender={data.get('sender_id')}, my_id={self.user_id}")
+        
         conversation_id = data.get('conversation_id')
         sender_id = data.get('sender_id')
         
         if sender_id == self.user_id:
+            print(f"⏭️ [Chat] Skip - message from myself")
             return
         
         contact = None
@@ -320,41 +344,58 @@ class Chat(tk.Frame):
             if not contact:
                 return
         
-        is_current_chat = (
-            hasattr(self, 'current_view') and 
-            hasattr(self.current_view, 'conversation_id') and
-            self.current_view.conversation_id == conversation_id
-        )
-        
-        if is_current_chat:
-            if hasattr(self.current_view, 'handle_incoming_message'):
-                self.current_view.handle_incoming_message(data)
-            return
-        
+        # Giải mã tin nhắn
         try:
             plain_text, is_valid = ChatManager.decrypt_received_message(data, self.user_id)
             
-            if is_valid:
-                latest_time_obj = datetime.fromisoformat(data.get('sent_at'))
+            if not is_valid or plain_text.startswith('[ERROR'):
+                print(f"❌ [Chat] Decryption failed for message")
+                return
                 
-                # 1. Cập nhật preview + sort
-                self.update_sidebar_after_send(
-                    contact['name'],
-                    plain_text.strip()[:30] + "...",
-                    latest_time_obj
-                )
+            latest_time_obj = datetime.fromisoformat(data.get('sent_at'))
+            
+            # 1. Cập nhật dữ liệu contact
+            contact['message'] = plain_text.strip()[:30] + "..."
+            contact['latest_message_time'] = latest_time_obj
+            
+            # 2. Kiểm tra xem có đang chat với người này không
+            is_current_chat = (
+                hasattr(self, 'current_view') and 
+                hasattr(self.current_view, 'conversation_id') and
+                self.current_view.conversation_id == conversation_id
+            )
+            
+            if is_current_chat:
+                # Đang chat với người này
+                contact['unread_count'] = 0
+                print(f"✅ [Chat] Message from {contact['name']} (current chat) - updating chat window")
                 
-                # 2. TĂNG unread count
+                # CẬP NHẬT CHAT WINDOW
+                if hasattr(self.current_view, 'on_new_message'):
+                    self.current_view.on_new_message(data)
+            else:
+                # Không đang chat - tăng unread
                 current_unread = contact.get('unread_count', 0)
                 new_unread = current_unread + 1
-                
                 contact['unread_count'] = new_unread
-                self.update_unread_count_in_sidebar(contact['name'], new_unread)
-                
-                print(f" New message from {contact['name']} (unread: {new_unread})")
+                print(f"✅ [Chat] New message from {contact['name']} (unread: {new_unread})")
+            
+            # 3. Sort lại
+            self.contacts.sort(key=lambda x: x.get('latest_message_time', datetime.min), reverse=True)
+            
+            # 4. CẬP NHẬT UI SIDEBAR - LUÔN LUÔN CẬP NHẬT
+            self.sidebar.update_single_contact(
+                contact['name'],
+                plain_text.strip()[:30] + "...",
+                latest_time_obj
+            )
+            
+            print(f"✅ [Chat] Sidebar updated for {contact['name']}")
                 
         except Exception as e:
-            print(f"Error processing global new message: {e}")
+            print(f"❌ [Chat] Error processing global new message: {e}")
+            import traceback
+            traceback.print_exc()
 
     
     def update_sidebar_after_send(self, contact_name, message_preview, latest_time):

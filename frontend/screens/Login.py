@@ -249,6 +249,14 @@ class LoginPage(tk.Frame):
             
             user_id = user_data.get('user_id')
             if user_id:
+                # RECONNECT SOCKET NẾU BỊ DISCONNECT
+                if self.controller.sio_client and not self.controller.sio_client.connected:
+                    try:
+                        self.controller.sio_client.connect('http://localhost:5000')
+                        print(f" [LOGIN] Reconnected SocketIO")
+                    except Exception as e:
+                        print(f" [LOGIN] Error reconnecting: {e}")
+                
                 # EMIT LOGIN EVENT ĐỂ JOIN PERSONAL ROOM VÀ XỬ LÝ PENDING MESSAGES
                 if self.controller.sio_client and self.controller.sio_client.connected:
                     try:
